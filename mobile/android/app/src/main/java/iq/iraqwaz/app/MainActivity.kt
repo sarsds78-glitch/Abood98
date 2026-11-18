@@ -37,7 +37,10 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.style.layers.LineLayer
-import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.PropertyFactory.lineCap
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.LineString
@@ -82,7 +85,7 @@ class MainActivity : ComponentActivity() {
                     if (style.getSource(ROUTE_SOURCE_ID) == null) style.addSource(GeoJsonSource(ROUTE_SOURCE_ID))
                     if (style.getLayer(ROUTE_LAYER_ID) == null) {
                         style.addLayer(LineLayer(ROUTE_LAYER_ID, ROUTE_SOURCE_ID).withProperties(
-                            Property.LINE_COLOR("#16845B"), Property.LINE_WIDTH(6f), Property.LINE_CAP("round"), Property.LINE_JOIN("round")
+                            lineColor("#16845B"), lineWidth(6f), lineCap("round"), lineJoin("round")
                         ))
                     }
                 } catch (_: Exception) { statusMessage = "تعذر تجهيز طبقة المسار على الخريطة" }
