@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">IRAQ WAZ</string>
+    <!-- Development-only demo style. Replace with a licensed production style before public release. -->
+    <string name="map_style_url">https://demotiles.maplibre.org/style.json</string>
+</resources>
