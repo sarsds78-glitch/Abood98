@@ -342,7 +342,7 @@ private fun MapHome(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("IRAQ WAZ", color = IraqGreen, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
                     Spacer(Modifier.weight(1f))
-                    Text("نسخة تطوير 0.3", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
+                    Text("نسخة تطوير 0.5", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
                 }
                 Text("طريقك بالعراق صار أذكى", color = IraqDark, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(5.dp))
