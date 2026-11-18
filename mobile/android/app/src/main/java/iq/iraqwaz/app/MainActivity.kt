@@ -72,6 +72,10 @@ class MainActivity : ComponentActivity() {
     private var voiceGuide: TextToSpeech? = null
     private var voiceReady = false
     private var routeSummary by mutableStateOf<RouteSummary?>(null)
+    private var activeDestination: PlaceResult? = null
+    private var activeRoutePoints: List<LatLng> = emptyList()
+    private var offRouteSamples = 0
+    private var rerouting = false
     private var statusMessage by mutableStateOf("الخريطة جاهزة — ابحث عن وجهتك")
 
     private val locationPermission = registerForActivityResult(
@@ -142,6 +146,21 @@ class MainActivity : ComponentActivity() {
             override fun onLocationResult(result: LocationResult) {
                 val location = result.lastLocation ?: return
                 currentLocation = LatLng(location.latitude, location.longitude)
+                val destination = activeDestination
+                val accuracyOk = location.hasAccuracy() && location.accuracy <= 50f
+                if (destination != null && activeRoutePoints.size >= 2 && accuracyOk && !rerouting) {
+                    val distanceKm = distanceToRouteKm(currentLocation!!, activeRoutePoints)
+                    offRouteSamples = if (distanceKm > 0.12) offRouteSamples + 1 else 0
+                    if (offRouteSamples >= 2) {
+                        offRouteSamples = 0
+                        rerouting = true
+                        runOnUiThread {
+                            statusMessage = "خرجت عن المسار — جارٍ إيجاد طريق جديد..."
+                            speakArabic("خرجت عن المسار. جارٍ إعادة حساب الطريق.")
+                            routeTo(destination)
+                        }
+                    }
+                }
             }
         }
         try {
@@ -202,6 +221,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun routeTo(destination: PlaceResult) {
+        activeDestination = destination
+        offRouteSamples = 0
         val origin = currentLocation
         if (origin == null) {
             statusMessage = "حدد موقعك أولاً حتى نحسب الطريق"
@@ -227,6 +248,8 @@ class MainActivity : ComponentActivity() {
                 }
                 val summary = RouteSummary(route.getDouble("distance") / 1000.0, (route.getDouble("duration") / 60.0).toInt())
                 runOnUiThread {
+                    activeRoutePoints = points
+                    rerouting = false
                     drawRoute(points)
                     routeSummary = summary
                     statusMessage = "المسار محسوب تجريبياً إلى ${destination.title}"
@@ -234,9 +257,31 @@ class MainActivity : ComponentActivity() {
                     mapRef?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(destination.latitude, destination.longitude), 13.0))
                 }
             } catch (e: Exception) {
-                runOnUiThread { statusMessage = "تعذر حساب المسار: ${e.localizedMessage ?: "تحقق من الإنترنت"}" }
+                runOnUiThread {
+                    rerouting = false
+                    statusMessage = "تعذر حساب المسار: ${e.localizedMessage ?: "تحقق من الإنترنت"}"
+                }
             } finally { connection?.disconnect() }
         }
+    }
+
+    private fun distanceToRouteKm(location: LatLng, points: List<LatLng>): Double {
+        // Sample route vertices to keep GPS callbacks lightweight on the phone.
+        val stride = maxOf(1, points.size / 250)
+        var minimum = Double.MAX_VALUE
+        for (index in points.indices step stride) {
+            val point = points[index]
+            val dLat = Math.toRadians(point.latitude - location.latitude)
+            val dLon = Math.toRadians(point.longitude - location.longitude)
+            val lat1 = Math.toRadians(location.latitude)
+            val lat2 = Math.toRadians(point.latitude)
+            val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+                kotlin.math.cos(lat1) * kotlin.math.cos(lat2) *
+                kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+            val distance = 6371.0 * 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+            if (distance < minimum) minimum = distance
+        }
+        return minimum
     }
 
     private fun drawRoute(points: List<LatLng>) {
