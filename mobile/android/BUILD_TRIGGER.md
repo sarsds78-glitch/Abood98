@@ -1,0 +1,1 @@
+Workflow trigger file. APK build is executed by GitHub Actions on Android source changes.
