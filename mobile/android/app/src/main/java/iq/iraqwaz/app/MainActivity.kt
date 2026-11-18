@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.os.Bundle
+import android.os.Looper
+import android.speech.tts.TextToSpeech
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +31,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.Priority
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
 import org.maplibre.android.camera.CameraPosition
@@ -62,6 +68,9 @@ class MainActivity : ComponentActivity() {
     private var mapRef: MapLibreMap? = null
     private lateinit var mapView: MapView
     private var currentLocation: LatLng? = null
+    private var locationCallback: LocationCallback? = null
+    private var voiceGuide: TextToSpeech? = null
+    private var voiceReady = false
     private var routeSummary by mutableStateOf<RouteSummary?>(null)
     private var statusMessage by mutableStateOf("الخريطة جاهزة — ابحث عن وجهتك")
 
@@ -69,13 +78,17 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestMultiplePermissions()
     ) { result ->
         if (result[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true) moveToCurrentLocation()
+            result[Manifest.permission.ACCESS_COARSE_LOCATION] == true) { moveToCurrentLocation(); startLocationUpdates() }
         else statusMessage = "لم يتم منح إذن الموقع. يمكنك استخدام البحث يدوياً."
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MapLibre.getInstance(this)
+        voiceGuide = TextToSpeech(this) { result ->
+            voiceReady = result == TextToSpeech.SUCCESS
+            if (voiceReady) voiceGuide?.language = Locale("ar", "IQ")
+        }
         mapView = MapView(this)
         mapView.onCreate(savedInstanceState)
         mapView.getMapAsync { map ->
@@ -111,9 +124,42 @@ class MainActivity : ComponentActivity() {
     private fun requestLocationAndCenter() {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        if (fine || coarse) moveToCurrentLocation() else locationPermission.launch(
+        if (fine || coarse) { moveToCurrentLocation(); startLocationUpdates() } else locationPermission.launch(
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         )
+    }
+
+    @Suppress("MissingPermission")
+    private fun startLocationUpdates() {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!fine && !coarse) return
+        if (locationCallback != null) return
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 5000L)
+            .setMinUpdateIntervalMillis(2500L)
+            .build()
+        locationCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                val location = result.lastLocation ?: return
+                currentLocation = LatLng(location.latitude, location.longitude)
+            }
+        }
+        try {
+            LocationServices.getFusedLocationProviderClient(this)
+                .requestLocationUpdates(request, locationCallback!!, Looper.getMainLooper())
+        } catch (_: SecurityException) {
+            locationCallback = null
+            statusMessage = "نحتاج إذن الموقع لتحديث موقعك أثناء الاستخدام"
+        }
+    }
+
+    private fun stopLocationUpdates() {
+        locationCallback?.let { LocationServices.getFusedLocationProviderClient(this).removeLocationUpdates(it) }
+        locationCallback = null
+    }
+
+    private fun speakArabic(message: String) {
+        if (voiceReady) voiceGuide?.speak(message, TextToSpeech.QUEUE_FLUSH, null, "iraq-waz-guidance")
     }
 
     @Suppress("MissingPermission")
@@ -184,6 +230,7 @@ class MainActivity : ComponentActivity() {
                     drawRoute(points)
                     routeSummary = summary
                     statusMessage = "المسار محسوب تجريبياً إلى ${destination.title}"
+                    speakArabic("تم حساب الطريق إلى ${destination.title}. المسافة ${summary.distanceKm.toInt()} كيلومتر، والوقت المتوقع ${summary.durationMin} دقيقة. اتبع الخريطة بحذر.")
                     mapRef?.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(destination.latitude, destination.longitude), 13.0))
                 }
             } catch (e: Exception) {
@@ -201,11 +248,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onStart() { super.onStart(); if (::mapView.isInitialized) mapView.onStart() }
+    override fun onStart() { super.onStart(); if (::mapView.isInitialized) mapView.onStart(); startLocationUpdates() }
     override fun onResume() { super.onResume(); if (::mapView.isInitialized) mapView.onResume() }
     override fun onPause() { if (::mapView.isInitialized) mapView.onPause(); super.onPause() }
-    override fun onStop() { if (::mapView.isInitialized) mapView.onStop(); super.onStop() }
-    override fun onDestroy() { if (::mapView.isInitialized) mapView.onDestroy(); worker.shutdown(); super.onDestroy() }
+    override fun onStop() { stopLocationUpdates(); if (::mapView.isInitialized) mapView.onStop(); super.onStop() }
+    override fun onDestroy() { stopLocationUpdates(); voiceGuide?.stop(); voiceGuide?.shutdown(); if (::mapView.isInitialized) mapView.onDestroy(); worker.shutdown(); super.onDestroy() }
 }
 
 @Composable
